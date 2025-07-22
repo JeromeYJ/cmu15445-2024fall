@@ -18,10 +18,45 @@ namespace bustub {
 
 InsertExecutor::InsertExecutor(ExecutorContext *exec_ctx, const InsertPlanNode *plan,
                                std::unique_ptr<AbstractExecutor> &&child_executor)
-    : AbstractExecutor(exec_ctx) {}
+    : AbstractExecutor(exec_ctx), plan_(plan), child_executor_(std::move(child_executor)) {}
 
-void InsertExecutor::Init() { throw NotImplementedException("InsertExecutor is not implemented"); }
+void InsertExecutor::Init() {
+  // child executor 初始化
+  child_executor_->Init();
+}
 
-auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool { return false; }
+auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
+  // 所有tuple插入完毕，结束
+  if (completed_) {
+    return false;
+  }
+
+  int32_t inserted_num = 0;
+  auto info = exec_ctx_->GetCatalog()->GetTable(plan_->table_oid_);
+  auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(info->name_);
+
+  // 设置插入的新tuple 的 TupleMeta
+  TupleMeta meta = {0, false};
+
+  // insert执行中是将所有要插入的tuple一次性插完，然后返回true
+  // 之后再进入这里的next函数时，返回false，结束insert执行
+  while (child_executor_->Next(tuple, rid)) {
+    // 函数返回插入tuple的RID
+    *rid = info->table_->InsertTuple(meta, *tuple).value();
+
+    for (auto &index_info : indexes) {
+      auto key = tuple->KeyFromTuple(info->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
+      index_info->index_->InsertEntry(key, *rid, exec_ctx_->GetTransaction());
+    }
+    inserted_num++;
+  }
+
+  completed_ = true;
+  std::vector<Value> integer;
+  integer.emplace_back(Value(INTEGER, inserted_num));
+  *tuple = Tuple(integer, &GetOutputSchema());
+
+  return true;
+}
 
 }  // namespace bustub

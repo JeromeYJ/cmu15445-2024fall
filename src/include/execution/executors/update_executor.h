@@ -66,5 +66,8 @@ class UpdateExecutor : public AbstractExecutor {
 
   /** The child executor to obtain value from */
   std::unique_ptr<AbstractExecutor> child_executor_;
+
+  // 记录是否已经插入完成
+  bool completed_{false};
 };
 }  // namespace bustub
