@@ -963,7 +963,7 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
   guard.Drop();
 
   if (ctx.root_page_id_ == INVALID_PAGE_ID) {
-    return INDEXITERATOR_TYPE(bpm_, ReadPageGuard(), -1);
+    return INDEXITERATOR_TYPE(bpm_, INVALID_PAGE_ID, -1);
   }
 
   // 找到最左侧的叶子结点
@@ -975,7 +975,7 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
     page_guard = bpm_->ReadPage(page_id);
     page = page_guard.As<BPlusTreePage>();
   }
-  return INDEXITERATOR_TYPE(bpm_, std::move(page_guard), 0);
+  return INDEXITERATOR_TYPE(bpm_, page_guard.GetPageId(), 0);
 }
 
 /*
@@ -993,7 +993,7 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
   guard.Drop();
 
   if (ctx.root_page_id_ == INVALID_PAGE_ID) {
-    return INDEXITERATOR_TYPE(bpm_, ReadPageGuard(), -1);
+    return INDEXITERATOR_TYPE(bpm_, INVALID_PAGE_ID, -1);
   }
 
   ReadPageGuard page_guard = bpm_->ReadPage(ctx.root_page_id_);
@@ -1008,9 +1008,9 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
   // 当前结点为叶子结点时
   int index = KeyBinarySearch(page, key);
   if (index == -1) {
-    return INDEXITERATOR_TYPE(bpm_, ReadPageGuard(), -1);
+    return INDEXITERATOR_TYPE(bpm_, INVALID_PAGE_ID, -1);
   }
-  return INDEXITERATOR_TYPE(bpm_, std::move(page_guard), index);
+  return INDEXITERATOR_TYPE(bpm_, page_guard.GetPageId(), index);
 }
 
 /*
@@ -1019,7 +1019,7 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(bpm_, ReadPageGuard(), -1); }
+auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(bpm_, INVALID_PAGE_ID, -1); }
 
 /**
  * @return Page id of the root of this tree

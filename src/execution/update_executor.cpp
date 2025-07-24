@@ -33,7 +33,6 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   if (completed_) {
     return false;
   }
-
   int32_t updated_nums = 0;
   // p4中可能会要修改第一个成员值
   TupleMeta meta = {0, false};
@@ -55,8 +54,8 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     // 再对tuple进行更新
     std::vector<Value> values{};
     values.reserve(GetOutputSchema().GetColumnCount());
-    for (const auto &col : plan_->target_expressions_) {
-      values.push_back(col->Evaluate(tuple, child_executor_->GetOutputSchema()));
+    for (const auto &expr : plan_->target_expressions_) {
+      values.push_back(expr->Evaluate(tuple, child_executor_->GetOutputSchema()));
     }
     Tuple new_tuple{values, &child_executor_->GetOutputSchema()};
 

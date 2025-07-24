@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include "common/rid.h"
@@ -47,6 +48,13 @@ class IndexScanExecutor : public AbstractExecutor {
 
   std::shared_ptr<IndexInfo> index_info_;
 
-  
+  // b+树index
+  BPlusTreeIndexForTwoIntegerColumn *tree_;
+
+  // b+树的迭代器
+  BPlusTreeIndexIteratorForTwoIntegerColumn it_;
+
+  // 用于标记当前要访问的pred_keys数组中的位置
+  size_t cursor_{0};
 };
 }  // namespace bustub

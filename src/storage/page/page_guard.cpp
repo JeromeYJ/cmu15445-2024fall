@@ -42,7 +42,11 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> fra
       bpm_latch_(std::move(bpm_latch)),
       is_valid_(true) {
   bpm_latch_->unlock();
+  // std::cout << "Reader"
+  //         << " try to lock " << page_id << std::endl;
   frame_->rwlatch_.lock_shared();
+  // std::cout << "Reader"
+  //         << " locked " << page_id << std::endl;
   // frame_->pin_count_++;
   // frame_->page_id_ = page_id;
   // 记得更新 replacer_ 中 LRU-K 历史信息
@@ -165,6 +169,8 @@ void ReadPageGuard::Drop() {
   bpm_latch_->unlock();
 
   frame_->rwlatch_.unlock_shared();
+  // std::cout << "Reader"
+  //         << " unlocked " << page_id_ << std::endl;
   is_valid_ = false;
   replacer_ = nullptr;
   frame_ = nullptr;
@@ -198,7 +204,11 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
       is_valid_(true) {
   // 在p2中进行并发测试的时候发现的bug，应当直接在rwlatch加锁前解锁bpm_latch_
   bpm_latch_->unlock();
+  // std::cout << "Writer "
+  //         << " try to lock " << page_id << std::endl;
   frame_->rwlatch_.lock();
+  // std::cout << "Writer "
+  //         << " locked " << page_id << std::endl;
   frame_->is_dirty_ = true;
   // std::cout << "Thread " << std::this_thread::get_id()
   //         << " locked " << page_id << std::endl;
@@ -327,7 +337,7 @@ void WritePageGuard::Drop() {
   bpm_latch_->unlock();
 
   frame_->rwlatch_.unlock();
-  // std::cout << "Thread " << std::this_thread::get_id()
+  // std::cout << "Writer "
   //         << " unlocked " << page_id_ << std::endl;
   is_valid_ = false;
   replacer_ = nullptr;

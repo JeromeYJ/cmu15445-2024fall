@@ -24,7 +24,7 @@ INDEX_TEMPLATE_ARGUMENTS
 class IndexIterator {
  public:
   // you may define your own constructor based on your member variables
-  IndexIterator(BufferPoolManager *bpm, ReadPageGuard page_guard, int index);
+  IndexIterator(BufferPoolManager *bpm, page_id_t page_id, int index);
   ~IndexIterator();  // NOLINT
 
   auto IsEnd() -> bool;
@@ -37,20 +37,19 @@ class IndexIterator {
   auto operator++() -> IndexIterator &;
 
   auto operator==(const IndexIterator &itr) const -> bool {
-    return ((index_ == -1 && itr.index_ == -1) ||
-            (index_ == itr.index_ && page_guard_.GetPageId() == itr.page_guard_.GetPageId()));
+    return ((index_ == -1 && itr.index_ == -1) || (page_id_ == itr.page_id_ && index_ == itr.index_));
   }
 
-  auto operator!=(const IndexIterator &itr) const -> bool {
-    return (index_ != itr.index_ ||
-            (!(index_ == -1 && itr.index_ == -1) && page_guard_.GetPageId() != itr.page_guard_.GetPageId()));
-  }
+  auto operator!=(const IndexIterator &itr) const -> bool { return (page_id_ != itr.page_id_ || index_ != itr.index_); }
 
  private:
   // add your own private member variables here
   BufferPoolManager *bpm_;
-  ReadPageGuard page_guard_;
+  // 之前这里用pageGuard作为成员，导致了意想不到的死锁
+  // ReadPageGuard page_guard_;
+  page_id_t page_id_;
   int index_;
+  std::pair<KeyType, ValueType> result_;
 };
 
 }  // namespace bustub
