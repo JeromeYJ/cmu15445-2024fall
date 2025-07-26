@@ -26,6 +26,9 @@ AggregationExecutor::AggregationExecutor(ExecutorContext *exec_ctx, const Aggreg
 
 void AggregationExecutor::Init() {
   child_executor_->Init();
+  // 有些情况下，会对该算子多次Init，每次Init需要清空hashtable
+  // nested loop join中测出的bug
+  aht_.Clear();
 
   // In the context of a query plan, aggregations are pipeline breakers.
   // This may influence the way that you use the AggregationExecutor::Init() and AggregationExecutor::Next() functions

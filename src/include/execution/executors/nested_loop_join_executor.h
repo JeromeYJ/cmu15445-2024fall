@@ -19,6 +19,7 @@
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/nested_loop_join_plan.h"
 #include "storage/table/tuple.h"
+#include "type/value_factory.h"
 
 namespace bustub {
 
@@ -55,6 +56,20 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
  private:
   /** The NestedLoopJoin plan node to be executed. */
   const NestedLoopJoinPlanNode *plan_;
+
+  std::unique_ptr<AbstractExecutor> left_executor_;
+
+  std::unique_ptr<AbstractExecutor> right_executor_;
+
+  // 用于判断当前处理的左表tuple是否已经与所有右表tuple比较过
+  bool is_left_tuple_over_{true};
+
+  // 表示left_tuple是否匹配上了某个right_tuple
+  // 用于在left join情况下判断是否需要生成连接null值的tuple
+  bool is_match_{false};
+
+  // 记录当前算子左表(outer table)正在比较的tuple，如果不加入该成员，无法通过Next获取之前的tuple
+  Tuple left_tuple_{};
 };
 
 }  // namespace bustub

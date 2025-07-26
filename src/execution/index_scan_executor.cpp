@@ -19,7 +19,10 @@ IndexScanExecutor::IndexScanExecutor(ExecutorContext *exec_ctx, const IndexScanP
       tree_(dynamic_cast<BPlusTreeIndexForTwoIntegerColumn *>(index_info_->index_.get())),
       it_(tree_->GetBeginIterator()) {}
 
-void IndexScanExecutor::Init() {}
+void IndexScanExecutor::Init() {
+  cursor_ = 0;
+  it_ = tree_->GetBeginIterator();
+}
 
 auto IndexScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   // project中order by不与where语句同时出现，这里根据pre_keys_是否为空简单判断是进行order by 还是 索引点查询
