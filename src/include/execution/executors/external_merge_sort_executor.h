@@ -25,10 +25,36 @@
 
 namespace bustub {
 
+#define SORT_PAGE_HEADER_SIZE 12
+
 /**
  * Page to hold the intermediate data for external merge sort.
  *
  * Only fixed-length data will be supported in Fall 2024.
+ *
+ * Sort Page Format:
+ *    12
+ * ----------
+ * | HEADER |
+ * ----------
+ * ----------------------------------------------
+ * |  Tuple(1)  |  Tuple(2)  | ... |  Tuple(n)  |
+ * ----------------------------------------------
+ *
+ * HEADER Format:
+ * ----------------------------------
+ * | size_ | maxsize_ | tuple_size_ |
+ * ----------------------------------
+ *
+ * Tuple Format (after serialization):
+ *    4    schema.GetInlinedStorageSize()
+ * --------------------------------------
+ * | size |            data             |
+ * --------------------------------------
+ *
+ * 关于内存与磁盘数据传输的工作都交给了buffer pool manager，包括脏页写回、磁盘页面读取等
+ * 所以SortPage的功能设计不需要考虑序列化、反序列化等，只需要考虑在内存中的操作
+ * 这也是数据库缓冲区buffer pool设计的巧妙之处
  */
 class SortPage {
  public:
@@ -36,11 +62,57 @@ class SortPage {
    * TODO: Define and implement the methods for reading data from and writing data to the sort
    * page. Feel free to add other helper methods.
    */
+  // 参考 b plus tree page，删除默认constructor
+  SortPage() = delete;
+  SortPage(const SortPage &other) = delete;
+
+  void Init(int size, int max_size, int tuple_size) {
+    size_ = size;
+    max_size_ = max_size;
+    tuple_size_ = tuple_size;
+    // data_为指向当前SortPage中元组区起始地址的指针
+    // data_ = reinterpret_cast<char*>(this) + SORT_PAGE_HEADER_SIZE;
+  }
+
+  auto GetSize() const -> int { return size_; }
+
+  auto GetMaxSize() const -> int { return max_size_; }
+
+  auto IsFull() const -> bool { return size_ == max_size_; }
+
+  auto InsertTuple(const Tuple &tuple) -> bool {
+    if (IsFull()) {
+      return false;
+    }
+    int offset = size_ * tuple_size_;
+    tuple.SerializeTo(data_ + offset);
+    size_++;
+    return true;
+  }
+
+  auto GetTupleAt(int idx) const -> Tuple {
+    int offset = idx * tuple_size_;
+    Tuple tuple{};
+    tuple.DeserializeFrom(data_ + offset);
+    return tuple;
+  }
+
+  void Clear() {
+    size_ = 0;
+    //
+  }
+
  private:
   /**
    * TODO: Define the private members. You may want to have some necessary metadata for
    * the sort page before the start of the actual data.
    */
+  // 元数据
+  int size_;
+  int max_size_;
+  int tuple_size_;
+  // tuples 元组数据区
+  char data_[];
 };
 
 /**
@@ -55,6 +127,8 @@ class MergeSortRun {
 
   auto GetPageCount() -> size_t { return pages_.size(); }
 
+  auto GetPages() -> std::vector<page_id_t> { return pages_; }
+
   /** Iterator for iterating on the sorted tuples in one run. */
   class Iterator {
     friend class MergeSortRun;
@@ -68,7 +142,18 @@ class MergeSortRun {
      *
      * TODO: Implement this method.
      */
-    auto operator++() -> Iterator & { return *this; }
+    auto operator++() -> Iterator & {
+      auto sort_page = page_guard_.As<SortPage>();
+      tuple_idx_++;
+      if (tuple_idx_ >= sort_page->GetSize()) {
+        pages_idx_++;
+        tuple_idx_ = 0;
+        if (pages_idx_ < static_cast<int>(run_->pages_.size())) {
+          page_guard_ = run_->bpm_->ReadPage(run_->pages_[pages_idx_]);
+        }
+      }
+      return *this;
+    }
 
     /**
      * Dereference the iterator to get the current tuple in the sorted run that the iterator is
@@ -76,14 +161,19 @@ class MergeSortRun {
      *
      * TODO: Implement this method.
      */
-    auto operator*() -> Tuple { return {}; }
+    auto operator*() -> Tuple {
+      auto sort_page = page_guard_.As<SortPage>();
+      return sort_page->GetTupleAt(tuple_idx_);
+    }
 
     /**
      * Checks whether two iterators are pointing to the same tuple in the same sorted run.
      *
      * TODO: Implement this method.
      */
-    auto operator==(const Iterator &other) const -> bool { return false; }
+    auto operator==(const Iterator &other) const -> bool {
+      return run_ == other.run_ && pages_idx_ == other.pages_idx_ && tuple_idx_ == other.tuple_idx_;
+    }
 
     /**
      * Checks whether two iterators are pointing to different tuples in a sorted run or iterating
@@ -91,10 +181,17 @@ class MergeSortRun {
      *
      * TODO: Implement this method.
      */
-    auto operator!=(const Iterator &other) const -> bool { return false; }
+    auto operator!=(const Iterator &other) const -> bool {
+      return run_ != other.run_ || pages_idx_ != other.pages_idx_ || tuple_idx_ != other.tuple_idx_;
+    }
 
    private:
-    explicit Iterator(const MergeSortRun *run) : run_(run) {}
+    explicit Iterator(const MergeSortRun *run, size_t pages_idx, size_t tuple_idx)
+        : run_(run), pages_idx_(pages_idx), tuple_idx_(tuple_idx) {
+      if (pages_idx_ < static_cast<int>(run_->pages_.size())) {
+        page_guard_ = run_->bpm_->ReadPage(run_->pages_[pages_idx_]);
+      }
+    }
 
     /** The sorted run that the iterator is iterating on. */
     [[maybe_unused]] const MergeSortRun *run_;
@@ -104,6 +201,13 @@ class MergeSortRun {
      * position in the sorted run. Also feel free to add additional constructors to initialize
      * your private members.
      */
+    // 目前所在的SortPage在pages_中的index
+    int pages_idx_;
+    // 目前所在SortPage内的tuple index
+    int tuple_idx_;
+    // 保存当前页面的ReadPageGuard，提高性能
+    // 之前没有设置这个，性能很差
+    ReadPageGuard page_guard_{};
   };
 
   /**
@@ -111,14 +215,14 @@ class MergeSortRun {
    *
    * TODO: Implement this method.
    */
-  auto Begin() -> Iterator { return {}; }
+  auto Begin() -> Iterator { return Iterator(this, 0, 0); }
 
   /**
    * Get an iterator pointing to the end of the sorted run, i.e. the position after the last tuple.
    *
    * TODO: Implement this method.
    */
-  auto End() -> Iterator { return {}; }
+  auto End() -> Iterator { return Iterator(this, pages_.size(), 0); }
 
  private:
   /** The page IDs of the sort pages that store the sorted tuples. */
@@ -163,6 +267,11 @@ class ExternalMergeSortExecutor : public AbstractExecutor {
   TupleComparator cmp_;
 
   /** TODO: You will want to add your own private members here. */
+  std::unique_ptr<AbstractExecutor> child_executor_;
+
+  std::vector<MergeSortRun> runs_;
+
+  MergeSortRun::Iterator iter_{};
 };
 
 }  // namespace bustub

@@ -22,10 +22,41 @@ namespace bustub {
 
 TupleComparator::TupleComparator(std::vector<OrderBy> order_bys) : order_bys_(std::move(order_bys)) {}
 
-auto TupleComparator::operator()(const SortEntry &entry_a, const SortEntry &entry_b) const -> bool { return false; }
+auto TupleComparator::operator()(const SortEntry &entry_a, const SortEntry &entry_b) const -> bool {
+  for (size_t i = 0; i < entry_a.first.size(); i++) {
+    if (order_bys_[i].first == OrderByType::INVALID) {
+      return false;
+    }
+
+    if (order_bys_[i].first == OrderByType::DEFAULT || order_bys_[i].first == OrderByType::ASC) {
+      if (entry_a.first[i].CompareLessThan(entry_b.first[i]) == CmpBool::CmpTrue) {
+        return true;
+      }
+      if (entry_a.first[i].CompareGreaterThan(entry_b.first[i]) == CmpBool::CmpTrue) {
+        return false;
+      }
+    }
+
+    if (order_bys_[i].first == OrderByType::DESC) {
+      if (entry_a.first[i].CompareGreaterThan(entry_b.first[i]) == CmpBool::CmpTrue) {
+        return true;
+      }
+      if (entry_a.first[i].CompareLessThan(entry_b.first[i]) == CmpBool::CmpTrue) {
+        return false;
+      }
+    }
+  }
+  // order by 中每一项全相等
+  return true;
+}
 
 auto GenerateSortKey(const Tuple &tuple, const std::vector<OrderBy> &order_bys, const Schema &schema) -> SortKey {
-  return {};
+  SortKey sort_key{};
+  for (const auto &order_by : order_bys) {
+    sort_key.emplace_back(order_by.second->Evaluate(&tuple, schema));
+  }
+
+  return sort_key;
 }
 
 /**
