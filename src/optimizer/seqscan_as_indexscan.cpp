@@ -35,7 +35,7 @@ auto Helper(std::vector<AbstractExpressionRef> &pred_keys, std::vector<uint32_t>
       pred_keys.emplace_back(comparison_expr->GetChildAt(1));
     }
 
-    // 确认filter中列是否均为同一列，若不为同一列则直接返回false。均为同一列则将其存入column_value_expr中，column_value_expr中保持只有一个元素
+    // 确认filter中列是否均为同一列/同一组列，若不为同一列/同一组列则直接返回false。均为同一列/同一组列则将其存入column_value_expr中，column_value_expr中保持只有一个元素
     if (filter_column_ids.empty()) {
       filter_column_ids.emplace_back(column_value_expr->GetColIdx());
     } else {

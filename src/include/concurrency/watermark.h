@@ -1,6 +1,9 @@
 #pragma once
 
+#include <functional>
+#include <queue>
 #include <unordered_map>
+#include <vector>
 
 #include "concurrency/transaction.h"
 #include "storage/table/tuple.h"
@@ -32,9 +35,12 @@ class Watermark {
 
   timestamp_t commit_ts_;
 
+  // 这个类的设计主要就是计算这个成员变量
   timestamp_t watermark_;
 
   std::unordered_map<timestamp_t, int> current_reads_;
+
+  std::priority_queue<timestamp_t, std::vector<timestamp_t>, std::greater<>> min_heap_;
 };
 
 };  // namespace bustub
