@@ -77,7 +77,46 @@ auto GenerateSortKey(const Tuple &tuple, const std::vector<OrderBy> &order_bys, 
  */
 auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
-  UNIMPLEMENTED("not implemented");
+  // 特殊情况：base_tuple为deleted，且undo_logs中为空，则重构后依旧为deleted，则返回nullopt
+  if (base_meta.is_deleted_ && undo_logs.empty()) {
+    return std::nullopt;
+  }
+
+  // 成员为vector，默认拷贝构造即深拷贝
+  Tuple tuple(base_tuple);
+  bool delete_flag = false;
+  for (const auto &undo_log : undo_logs) {
+    if (undo_log.is_deleted_) {
+      delete_flag = true;
+      continue;
+    }
+
+    delete_flag = false;
+    std::vector<Value> values;
+    std::vector<Column> columns;
+    // 先获取目前undo_log的需要修改的列组成的undolog_schema
+    for (int i = 0; i < static_cast<int>(undo_log.modified_fields_.size()); i++) {
+      if (undo_log.modified_fields_[i]) {
+        columns.emplace_back(schema->GetColumn(i));
+      }
+    }
+    Schema undo_log_schema(columns);
+
+    int idx = 0;
+    for (int i = 0; i < static_cast<int>(undo_log.modified_fields_.size()); i++) {
+      if (undo_log.modified_fields_[i]) {
+        values.emplace_back(undo_log.tuple_.GetValue(&undo_log_schema, idx++));
+      } else {
+        values.emplace_back(tuple.GetValue(schema, i));
+      }
+    }
+    tuple = {values, schema};
+  }
+
+  if (delete_flag) {
+    return std::nullopt;
+  }
+  return tuple;
 }
 
 /**

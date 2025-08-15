@@ -53,7 +53,9 @@ class Catalog;
 using table_oid_t = uint32_t;
 using index_oid_t = uint32_t;
 
-/** Represents a link to a previous version of this tuple */
+/** Represents a link to a previous version of this tuple
+ *  相当于指向UndoLog的指针
+ */
 struct UndoLink {
   /* Previous version can be found in which txn */
   txn_id_t prev_txn_{INVALID_TXN_ID};
@@ -79,7 +81,7 @@ struct UndoLog {
   Tuple tuple_;
   /* Timestamp of this undo log */
   timestamp_t ts_{INVALID_TS};
-  /* Undo log prev version */
+  /* Undo log prev version 这是指向下一个UndoLog的UndoLink */
   UndoLink prev_version_{};
 };
 
