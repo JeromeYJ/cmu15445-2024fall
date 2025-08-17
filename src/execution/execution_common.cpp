@@ -207,7 +207,8 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
   // fmt::println(
   //     stderr,
   //     "You see this line of text because you have not implemented `TxnMgrDbg`. You should do this once you have "
-  //     "finished task 2. Implementing this helper function will save you a lot of time for debugging in later tasks.");
+  //     "finished task 2. Implementing this helper function will save you a lot of time for debugging in later
+  //     tasks.");
   auto iter = table_heap->MakeIterator();
   while (!iter.IsEnd()) {
     RID rid = iter.GetRID();
