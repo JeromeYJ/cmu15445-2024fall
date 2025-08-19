@@ -73,7 +73,7 @@ TEST(TxnExecutorTest, InsertCommitTest) {  // NOLINT
   WithTxn(txn_ref, QueryShowResult(*bustub, _var, _txn, query, IntResult{{1}}));
 }
 
-TEST(TxnExecutorTest, DISABLED_InsertDeleteTest) {  // NOLINT
+TEST(TxnExecutorTest, InsertDeleteTest) {  // NOLINT
   auto bustub = std::make_unique<BusTubInstance>();
   auto empty_table = IntResult{};
   Execute(*bustub, "CREATE TABLE maintable(a int)");
@@ -122,7 +122,7 @@ TEST(TxnExecutorTest, DISABLED_InsertDeleteTest) {  // NOLINT
   WithTxn(txn_ref, QueryShowResult(*bustub, _var, _txn, query, IntResult{{1}, {2}}));
 }
 
-TEST(TxnExecutorTest, DISABLED_InsertDeleteConflictTest) {  // NOLINT
+TEST(TxnExecutorTest, InsertDeleteConflictTest) {  // NOLINT
   auto bustub = std::make_unique<BusTubInstance>();
   auto empty_table = IntResult{};
   Execute(*bustub, "CREATE TABLE maintable(a int)");

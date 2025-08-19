@@ -181,10 +181,33 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
  */
 auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple, timestamp_t ts,
                         UndoLink prev_version) -> UndoLog {
-  // 1. 如果为insert的情况
+  // 1. 如果为insert的情况(目前在insert_executor中，没有使用该函数，即在一般的insert时，不需要生成UndoLog，但是在将元组插入到被删除的tuple时，会需要生成UndoLog。所以这里生成一个空的UndoLog)
   if (base_tuple == nullptr) {
-
+    std::vector<bool> modified_fields(schema->GetColumnCount(), true);
+    return {true, modified_fields, Tuple{}, ts, prev_version};
   }
+
+  // 2. 如果为delete的情况
+  if (target_tuple == nullptr) {
+    std::vector<bool> modified_fields(schema->GetColumnCount(), true);
+    return {false, modified_fields, *base_tuple, ts, prev_version};
+  }
+
+  // 3. 如果为update的情况
+  std::vector<bool> modified_fields;
+  std::vector<Value> values;
+  std::vector<Column> columns;
+  for (int i = 0; i < static_cast<int>(schema->GetColumnCount()); i++) {
+    if (base_tuple->GetValue(schema, i).CompareExactlyEquals(target_tuple->GetValue(schema, i))) {
+      modified_fields.emplace_back(false);
+    } else {
+      modified_fields.emplace_back(true);
+      values.emplace_back(base_tuple->GetValue(schema, i));
+      columns.emplace_back(schema->GetColumn(i));
+    }
+  }
+  Schema new_schema{columns};
+  return {false, modified_fields, Tuple{values, &new_schema}, ts, prev_version};
 }
 
 /**
@@ -199,7 +222,32 @@ auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tup
  */
 auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple,
                             const UndoLog &log) -> UndoLog {
-  UNIMPLEMENTED("not implemented");
+  // 如果log为insert后的空UndoLog，则按照特殊情况处理，返回的结果依旧为空UndoLog
+  if (log.is_deleted_) {
+    return log;
+  }
+  // 先将原本的tuple重建出来
+  std::vector<Value> values;
+  std::vector<Column> columns;
+  for (int i = 0; i < static_cast<int>(log.modified_fields_.size()); i++) {
+    if (log.modified_fields_[i]) {
+      columns.emplace_back(schema->GetColumn(i));
+    }
+  }
+  Schema undo_log_schema(columns);
+
+  int idx = 0;
+  for (int i = 0; i < static_cast<int>(log.modified_fields_.size()); i++) {
+    if (log.modified_fields_[i]) {
+      values.emplace_back(log.tuple_.GetValue(&undo_log_schema, idx++));
+    } else {
+      values.emplace_back(base_tuple->GetValue(schema, i));
+    }
+  }
+  Tuple old_tuple = {values, schema};
+
+  // 再根据old_tuple和target_tuple生成UndoLog
+  return GenerateNewUndoLog(schema, &old_tuple, target_tuple, log.ts_, log.prev_version_);
 }
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,
