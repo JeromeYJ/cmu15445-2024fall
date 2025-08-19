@@ -19,6 +19,7 @@
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/insert_plan.h"
 #include "storage/table/tuple.h"
+#include "concurrency/transaction_manager.h"
 
 namespace bustub {
 

@@ -72,6 +72,13 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   }
 
   // TODO(fall2023): Implement the commit logic!
+  for (auto [table_oid, rids] : txn->GetWriteSets()) {
+    for (auto rid : rids) {
+      auto [meta, tuple] = catalog_->GetTable(table_oid)->table_->GetTuple(rid);
+      meta.ts_ = commit_ts;
+      catalog_->GetTable(table_oid)->table_->UpdateTupleInPlace(meta, tuple, rid, nullptr);
+    }
+  }
 
   std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
 

@@ -5,7 +5,7 @@ namespace bustub {
 
 // NOLINTBEGIN(bugprone-unchecked-optional-access)
 
-TEST(TxnExecutorTest, DISABLED_InsertTest) {  // NOLINT
+TEST(TxnExecutorTest, InsertTest) {  // NOLINT
   auto bustub = std::make_unique<BusTubInstance>();
   auto empty_table = IntResult{};
   Execute(*bustub, "CREATE TABLE maintable(a int)");
@@ -31,7 +31,7 @@ TEST(TxnExecutorTest, DISABLED_InsertTest) {  // NOLINT
   WithTxn(txn_ref, QueryShowResult(*bustub, _var, _txn, query, empty_table));
 }
 
-TEST(TxnExecutorTest, DISABLED_InsertCommitTest) {  // NOLINT
+TEST(TxnExecutorTest, InsertCommitTest) {  // NOLINT
   auto bustub = std::make_unique<BusTubInstance>();
   Execute(*bustub, "CREATE TABLE maintable(a int)");
   auto table_info = bustub->catalog_->GetTable("maintable");
@@ -186,7 +186,7 @@ TEST(TxnExecutorTest, DISABLED_InsertDeleteConflictTest) {  // NOLINT
   WithTxn(txn7, CommitTxn(*bustub, _var, _txn));
 }
 
-TEST(TxnExecutorTest, DISABLED_GenerateUndoLogTest) {
+TEST(TxnExecutorTest, GenerateUndoLogTest) {
   {
     fmt::println(stderr, "--- GenerateUndoLogTest: Simple update ---");
     auto schema = ParseCreateStatement("a integer,b double,c boolean");

@@ -181,7 +181,10 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
  */
 auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple, timestamp_t ts,
                         UndoLink prev_version) -> UndoLog {
-  UNIMPLEMENTED("not implemented");
+  // 1. 如果为insert的情况
+  if (base_tuple == nullptr) {
+
+  }
 }
 
 /**
