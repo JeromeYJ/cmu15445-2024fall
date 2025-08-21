@@ -33,9 +33,12 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   if (completed_) {
     return false;
   }
+
+  auto txn_mgr = exec_ctx_->GetTransactionManager();
   int32_t updated_nums = 0;
-  // p4中可能会要修改第一个成员值
-  TupleMeta meta = {0, false};
+  auto txn = exec_ctx_->GetTransaction();
+  auto txn_tmp_ts = txn->GetTransactionTempTs();
+  TupleMeta meta = {txn_tmp_ts, false};
   auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_);
 
   // 与insert类似，所有tuple插入完返回true，然后再返回false
@@ -43,12 +46,20 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     // P3中 update 主要分为 delete 和 insert 两个部分
 
     // 先进行删除，直接更新TupleMeta的is_deleted_成员
-    meta.is_deleted_ = true;
-    table_info_->table_->UpdateTupleMeta(meta, *rid);
+    // meta.is_deleted_ = true;
+    // table_info_->table_->UpdateTupleMeta(meta, *rid);
 
-    for (auto &index_info : indexes) {
-      auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
-      index_info->index_->DeleteEntry(key, *rid, exec_ctx_->GetTransaction());
+    // for (auto &index_info : indexes) {
+    //   auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
+    //   index_info->index_->DeleteEntry(key, *rid, exec_ctx_->GetTransaction());
+    // }
+
+    // 检测 写-写冲突
+    auto base_meta = table_info_->table_->GetTupleMeta(*rid);
+    if (base_meta.ts_ > txn->GetReadTs() && base_meta.ts_ != txn_tmp_ts) {
+      // 还未实现Abort时，设置为Tainted
+      txn->SetTainted();
+      throw ExecutionException("in delete_executor: write-write conflict");
     }
 
     // 再对tuple进行更新
@@ -59,15 +70,58 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     }
     Tuple new_tuple{values, &child_executor_->GetOutputSchema()};
 
-    // 最后进行新tuple的插入
-    meta.is_deleted_ = false;
-    RID inserted_rid = table_info_->table_->InsertTuple(meta, new_tuple).value();
+    // 生成undo_log
+    // bool undo_link_valid_flag = true;
+    // UndoLog log;
+    // if (base_meta.ts_ == txn_tmp_ts) {
+    //   // 如果原本tuple对应的最新undo_link为invalid，表示原本为insert，没有生成undo_log
+    //   if (!txn_mgr->GetUndoLink(*rid).value().IsValid()) {
+    //     undo_link_valid_flag = false;
+    //   } else {
+    //     log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, &new_tuple, txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
+    //   }
+    // } else {
+    //   log = GenerateNewUndoLog(&(table_info_->schema_), tuple, &new_tuple, base_meta.ts_, *(txn_mgr->GetUndoLink(*rid)));
+    // }
 
-    for (auto &index_info : indexes) {
-      auto key =
-          new_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
-      index_info->index_->InsertEntry(key, inserted_rid, exec_ctx_->GetTransaction());
+    // if (undo_link_valid_flag) {
+    //   // 更新txn中的undo_logs和write_set，更新undo_link和tuple meta
+    //   auto undo_link = txn->AppendUndoLog(std::move(log));
+    //   txn->AppendWriteSet(table_info_->oid_, *rid);
+    //   UpdateTupleAndUndoLink(txn_mgr, *rid, undo_link, table_info_->table_.get(), txn, meta, new_tuple, nullptr);
+    // } else {
+    //   table_info_->table_->UpdateTupleInPlace(meta, new_tuple, *rid, nullptr);
+    // }
+
+    // 生成undo_log
+    UndoLog log;
+    if (base_meta.ts_ == txn_tmp_ts) {
+      // 如果原本tuple对应的最新undo_link为invalid，表示原本为insert，没有生成undo_log
+      if (!txn_mgr->GetUndoLink(*rid).value().IsValid()) {
+        table_info_->table_->UpdateTupleInPlace(meta, new_tuple, *rid, nullptr);
+      } else {
+        log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, &new_tuple, txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
+        // 更新txn中的undo_logs中的对应undo_log
+        txn->ModifyUndoLog(log.prev_version_.prev_log_idx_, log);
+        table_info_->table_->UpdateTupleInPlace(meta, new_tuple, *rid, nullptr);
+      }
+    } else {
+      log = GenerateNewUndoLog(&(table_info_->schema_), tuple, &new_tuple, base_meta.ts_, *(txn_mgr->GetUndoLink(*rid)));
+      // 在txn中更新undo_logs和write_set，更新undo_link和tuple meta
+      auto undo_link = txn->AppendUndoLog(std::move(log));
+      txn->AppendWriteSet(table_info_->oid_, *rid);
+      UpdateTupleAndUndoLink(txn_mgr, *rid, undo_link, table_info_->table_.get(), txn, meta, new_tuple, nullptr);
     }
+
+    // 最后进行新tuple的插入
+    // meta.is_deleted_ = true;
+    // RID inserted_rid = table_info_->table_->InsertTuple(meta, new_tuple).value();
+
+    // for (auto &index_info : indexes) {
+    //   auto key =
+    //       new_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
+    //   index_info->index_->InsertEntry(key, inserted_rid, exec_ctx_->GetTransaction());
+    // }
 
     updated_nums++;
   }

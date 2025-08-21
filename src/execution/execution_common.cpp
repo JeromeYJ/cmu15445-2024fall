@@ -226,8 +226,10 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
   if (log.is_deleted_) {
     return log;
   }
+
+  // 下面是原本的思路，但是根据文档要求，确保仅在撤消日志中添加/更新数据，而不要删除数据，即之前在undo_log中的modified_fields_中为true的一直保持true，不会被改为false
+
   // 先将原本的tuple重建出来
-  std::vector<Value> values;
   std::vector<Column> columns;
   for (int i = 0; i < static_cast<int>(log.modified_fields_.size()); i++) {
     if (log.modified_fields_[i]) {
@@ -236,18 +238,60 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
   }
   Schema undo_log_schema(columns);
 
+  // 如果为delete的情况
+  if (target_tuple == nullptr) {
+    std::vector<bool> modified_fields(schema->GetColumnCount(), true);
+    std::vector<Value> values;
+    int idx = 0;
+    for (int i = 0; i < static_cast<int>(log.modified_fields_.size()); i++) {
+      if (log.modified_fields_[i]) {
+        values.emplace_back(log.tuple_.GetValue(&undo_log_schema, idx++));
+      } else {
+        values.emplace_back(base_tuple->GetValue(schema, i));
+      }
+    }
+    Tuple old_tuple = {values, schema};
+    return {log.is_deleted_, modified_fields, old_tuple, log.ts_, log.prev_version_};
+  }
+
+  // int idx = 0;
+  // for (int i = 0; i < static_cast<int>(log.modified_fields_.size()); i++) {
+  //   if (log.modified_fields_[i]) {
+  //     values.emplace_back(log.tuple_.GetValue(&undo_log_schema, idx++));
+  //   } else {
+  //     values.emplace_back(base_tuple->GetValue(schema, i));
+  //   }
+  // }
+  // Tuple old_tuple = {values, schema};
+
+  // // 再根据old_tuple和target_tuple生成UndoLog
+  // return GenerateNewUndoLog(schema, &old_tuple, target_tuple, log.ts_, log.prev_version_);
+
+  // 只要是原本为true的，都保持true（文档要求）
+  std::vector<bool> modified_fields;
+  std::vector<Value> values;
+  columns.clear();
   int idx = 0;
   for (int i = 0; i < static_cast<int>(log.modified_fields_.size()); i++) {
-    if (log.modified_fields_[i]) {
+    // 若为false，表示与base_tuple中对应列值一致，则可以直接用base_tuple的对应值进行比较
+    if (!log.modified_fields_[i]) {
+      if (base_tuple->GetValue(schema, i).CompareExactlyEquals(target_tuple->GetValue(schema, i))) {
+        modified_fields.emplace_back(false);
+      } else {
+        modified_fields.emplace_back(true);
+        values.emplace_back(base_tuple->GetValue(schema, i));
+        columns.emplace_back(schema->GetColumn(i));
+      }
+    } 
+    // 若为true，则可以在undo_log中直接获取上一版本的值 
+    else {
+      modified_fields.push_back(true);
       values.emplace_back(log.tuple_.GetValue(&undo_log_schema, idx++));
-    } else {
-      values.emplace_back(base_tuple->GetValue(schema, i));
+      columns.emplace_back(schema->GetColumn(i));
     }
   }
-  Tuple old_tuple = {values, schema};
-
-  // 再根据old_tuple和target_tuple生成UndoLog
-  return GenerateNewUndoLog(schema, &old_tuple, target_tuple, log.ts_, log.prev_version_);
+  Schema new_schema{columns};
+  return {log.is_deleted_, modified_fields, Tuple{values, &new_schema}, log.ts_, log.prev_version_};
 }
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,
