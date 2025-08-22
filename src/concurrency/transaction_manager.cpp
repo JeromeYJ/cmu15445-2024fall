@@ -105,6 +105,106 @@ void TransactionManager::Abort(Transaction *txn) {
   running_txns_.RemoveTxn(txn->read_ts_);
 }
 
-void TransactionManager::GarbageCollection() { UNIMPLEMENTED("not implemented"); }
+void TransactionManager::GarbageCollection() {
+  auto watermark = running_txns_.GetWatermark();
+
+  std::unique_lock<std::shared_mutex> l(txn_map_mutex_);
+  for (auto it = txn_map_.begin(); it != txn_map_.end();) {
+    auto txn = it->second;
+
+    // 根据测试用例，TAINTED状态的事务不清理
+    if (txn->GetTransactionState() == TransactionState::RUNNING ||
+        txn->GetTransactionState() == TransactionState::TAINTED) {
+      it++;
+      continue;
+    }
+
+    // 有些已提交的事务没有对数据做出修改，或者为Insert操作，没有生成undo_log，则直接将其删除
+    if (txn->GetUndoLogNum() == 0) {
+      // 删除当前事务，并获取下一个迭代器
+      it = txn_map_.erase(it);
+      continue;
+    }
+
+    if (txn->GetReadTs() >= watermark) {
+      it++;
+      continue;
+    }
+
+    bool need_deletion = true;
+    size_t size = txn->GetUndoLogNum();
+    std::vector<UndoLink> undo_links;
+
+    for (size_t i = 0; i < size; i++) {
+      auto undo_log = txn->GetUndoLog(i);
+      if (undo_log.ts_ > watermark) {
+        need_deletion = false;
+        continue;
+      }
+
+      auto rid = undo_log.tuple_.GetRid();
+      auto undo_link = GetUndoLink(rid).value();
+      bool flag = false;
+      // 判断是否table heap中的值可以满足条件，若满足，则对应undo_log可以删除
+      for (auto [table_oid, rids] : txn->GetWriteSets()) {
+        // 如果当前rid在这个表的写集合中
+        if (rids.find(rid) != rids.end()) {
+          // 获取表和tuple
+          auto [meta, tuple] = catalog_->GetTable(table_oid)->table_->GetTuple(rid);
+          if (meta.ts_ <= watermark) {
+            flag = true;
+          }
+          break;
+        }
+      }
+      if (flag) {
+        continue;
+      }
+
+      while (undo_link.IsValid()) {
+        // auto log = GetUndoLog(undo_link);
+        // auto next_log = GetUndoLog(log.prev_version_);
+        auto txn1 = txn_map_[undo_link.prev_txn_];
+        auto log = txn1->GetUndoLog(undo_link.prev_log_idx_);
+        if (log.ts_ == undo_log.ts_) {
+          need_deletion = false;
+          break;
+        }
+
+        auto txn2 = txn_map_[log.prev_version_.prev_txn_];
+        auto next_log = txn2->GetUndoLog(log.prev_version_.prev_log_idx_);
+        if (next_log.ts_ == undo_log.ts_) {
+          if (log.ts_ > watermark) {
+            need_deletion = false;
+          } else {
+            undo_links.emplace_back(undo_link);
+          }
+          break;
+        }
+        undo_link = log.prev_version_;
+      }
+
+      if (!need_deletion) {
+        break;
+      }
+    }
+
+    if (need_deletion) {
+      // 删除当前事务，并获取下一个迭代器
+      it = txn_map_.erase(it);
+
+      // 修改被删除的undo_log前一个undo_log的prev_version为invalid
+      for (auto &undo_link : undo_links) {
+        // auto log = GetUndoLog(undo_link);
+        auto txn1 = txn_map_[undo_link.prev_txn_];
+        auto log = txn1->GetUndoLog(undo_link.prev_log_idx_);
+        log.prev_version_ = UndoLink{};
+        txn_map_[undo_link.prev_txn_]->ModifyUndoLog(undo_link.prev_log_idx_, log);
+      }
+    } else {
+      it++;
+    }
+  }
+}
 
 }  // namespace bustub

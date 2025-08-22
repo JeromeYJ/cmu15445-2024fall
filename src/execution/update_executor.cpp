@@ -50,8 +50,8 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     // table_info_->table_->UpdateTupleMeta(meta, *rid);
 
     // for (auto &index_info : indexes) {
-    //   auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
-    //   index_info->index_->DeleteEntry(key, *rid, exec_ctx_->GetTransaction());
+    //   auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_,
+    //   index_info->index_->GetKeyAttrs()); index_info->index_->DeleteEntry(key, *rid, exec_ctx_->GetTransaction());
     // }
 
     // 检测 写-写冲突
@@ -69,6 +69,9 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       values.push_back(expr->Evaluate(tuple, child_executor_->GetOutputSchema()));
     }
     Tuple new_tuple{values, &child_executor_->GetOutputSchema()};
+    // 这里是为了在garbage collection中更方便
+    tuple->SetRid(*rid);
+    new_tuple.SetRid(*rid);
 
     // 生成undo_log
     // bool undo_link_valid_flag = true;
@@ -78,10 +81,12 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     //   if (!txn_mgr->GetUndoLink(*rid).value().IsValid()) {
     //     undo_link_valid_flag = false;
     //   } else {
-    //     log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, &new_tuple, txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
+    //     log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, &new_tuple,
+    //     txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
     //   }
     // } else {
-    //   log = GenerateNewUndoLog(&(table_info_->schema_), tuple, &new_tuple, base_meta.ts_, *(txn_mgr->GetUndoLink(*rid)));
+    //   log = GenerateNewUndoLog(&(table_info_->schema_), tuple, &new_tuple, base_meta.ts_,
+    //   *(txn_mgr->GetUndoLink(*rid)));
     // }
 
     // if (undo_link_valid_flag) {
@@ -100,13 +105,15 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       if (!txn_mgr->GetUndoLink(*rid).value().IsValid()) {
         table_info_->table_->UpdateTupleInPlace(meta, new_tuple, *rid, nullptr);
       } else {
-        log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, &new_tuple, txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
+        log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, &new_tuple,
+                                     txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
         // 更新txn中的undo_logs中的对应undo_log
         txn->ModifyUndoLog(log.prev_version_.prev_log_idx_, log);
         table_info_->table_->UpdateTupleInPlace(meta, new_tuple, *rid, nullptr);
       }
     } else {
-      log = GenerateNewUndoLog(&(table_info_->schema_), tuple, &new_tuple, base_meta.ts_, *(txn_mgr->GetUndoLink(*rid)));
+      log =
+          GenerateNewUndoLog(&(table_info_->schema_), tuple, &new_tuple, base_meta.ts_, *(txn_mgr->GetUndoLink(*rid)));
       // 在txn中更新undo_logs和write_set，更新undo_link和tuple meta
       auto undo_link = txn->AppendUndoLog(std::move(log));
       txn->AppendWriteSet(table_info_->oid_, *rid);

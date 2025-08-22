@@ -184,6 +184,8 @@ class Transaction {
   std::atomic<timestamp_t> commit_ts_{INVALID_TS};
 
   /** The latch for this transaction for accessing txn-level undo logs, protecting all fields below. */
+  // undo logs 存在各个事务的工作区内，没有单独的undo log表，所以在访问undo
+  // log时可能会出现多线程访问同一事务的情况，所以要对事务中的一些数据结构加闩锁latch
   std::mutex latch_;
 
   /**

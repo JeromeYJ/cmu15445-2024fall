@@ -181,10 +181,12 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
  */
 auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple, timestamp_t ts,
                         UndoLink prev_version) -> UndoLog {
-  // 1. 如果为insert的情况(目前在insert_executor中，没有使用该函数，即在一般的insert时，不需要生成UndoLog，但是在将元组插入到被删除的tuple时，会需要生成UndoLog。所以这里生成一个空的UndoLog)
+  // 1.
+  // 如果为insert的情况(目前在insert_executor中，没有使用该函数，即在一般的insert时，不需要生成UndoLog，但是在将元组插入到被删除的tuple时，会需要生成UndoLog。所以这里生成一个空的UndoLog)
   if (base_tuple == nullptr) {
     std::vector<bool> modified_fields(schema->GetColumnCount(), true);
-    return {true, modified_fields, Tuple{}, ts, prev_version};
+    Tuple tuple{target_tuple->GetRid()};
+    return {true, modified_fields, tuple, ts, prev_version};
   }
 
   // 2. 如果为delete的情况
@@ -207,7 +209,9 @@ auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tup
     }
   }
   Schema new_schema{columns};
-  return {false, modified_fields, Tuple{values, &new_schema}, ts, prev_version};
+  Tuple tuple{values, &new_schema};
+  tuple.SetRid(base_tuple->GetRid());
+  return {false, modified_fields, tuple, ts, prev_version};
 }
 
 /**
@@ -251,6 +255,7 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
       }
     }
     Tuple old_tuple = {values, schema};
+    old_tuple.SetRid(log.tuple_.GetRid());
     return {log.is_deleted_, modified_fields, old_tuple, log.ts_, log.prev_version_};
   }
 
@@ -282,16 +287,18 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
         values.emplace_back(base_tuple->GetValue(schema, i));
         columns.emplace_back(schema->GetColumn(i));
       }
-    } 
-    // 若为true，则可以在undo_log中直接获取上一版本的值 
-    else {
+    } else {
+      // 若为true，则可以在undo_log中直接获取上一版本的值
       modified_fields.push_back(true);
       values.emplace_back(log.tuple_.GetValue(&undo_log_schema, idx++));
       columns.emplace_back(schema->GetColumn(i));
     }
   }
   Schema new_schema{columns};
-  return {log.is_deleted_, modified_fields, Tuple{values, &new_schema}, log.ts_, log.prev_version_};
+  Tuple tuple{values, &new_schema};
+  // 为了方便garbage collection的设计
+  tuple.SetRid(log.tuple_.GetRid());
+  return {log.is_deleted_, modified_fields, tuple, log.ts_, log.prev_version_};
 }
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,

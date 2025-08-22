@@ -46,6 +46,8 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       txn->SetTainted();
       throw ExecutionException("in delete_executor: write-write conflict");
     }
+    // 这里是为了在garbage collection中更方便
+    tuple->SetRid(*rid);
 
     // 生成undo_log
     // bool undo_link_valid_flag = true;
@@ -56,7 +58,8 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
         // undo_link_valid_flag = false;
         table_info_->table_->UpdateTupleMeta(meta, *rid);
       } else {
-        log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, nullptr, txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
+        log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, nullptr,
+                                     txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
         // 更新txn中的undo_logs中的对应undo_log
         txn->ModifyUndoLog(log.prev_version_.prev_log_idx_, log);
         table_info_->table_->UpdateTupleInPlace(meta, *tuple, *rid, nullptr);
