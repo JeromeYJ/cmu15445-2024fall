@@ -59,7 +59,7 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     if (base_meta.ts_ > txn->GetReadTs() && base_meta.ts_ != txn_tmp_ts) {
       // 还未实现Abort时，设置为Tainted
       txn->SetTainted();
-      throw ExecutionException("in delete_executor: write-write conflict");
+      throw ExecutionException("in update_executor: write-write conflict");
     }
 
     // 再对tuple进行更新

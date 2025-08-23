@@ -14,7 +14,7 @@ namespace bustub {
 
 // NOLINTBEGIN(bugprone-unchecked-optional-access)
 
-TEST(TxnIndexTest, DISABLED_IndexInsertTest) {  // NOLINT
+TEST(TxnIndexTest, IndexInsertTest) {  // NOLINT
   auto bustub = std::make_unique<BusTubInstance>();
   const std::string query = "SELECT * FROM maintable";
 

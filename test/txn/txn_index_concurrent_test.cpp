@@ -16,7 +16,7 @@ namespace bustub {
 
 // NOLINTBEGIN(bugprone-unchecked-optional-access)
 
-TEST(TxnIndexTest, DISABLED_IndexConcurrentInsertTest) {  // NOLINT
+TEST(TxnIndexTest, IndexConcurrentInsertTest) {  // NOLINT
   const auto generate_sql = [](int thread_id, int n) -> std::string {
     return fmt::format("INSERT INTO maintable VALUES ({}, {})", n, thread_id);
   };
