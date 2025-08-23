@@ -74,6 +74,7 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
 
     // table_info_->table_->UpdateTupleMeta(meta, *rid);
 
+    // 根据p4要求，索引中不需要删除条目
     for (auto &index_info : indexes) {
       auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
       index_info->index_->DeleteEntry(key, *rid, exec_ctx_->GetTransaction());
