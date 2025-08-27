@@ -63,14 +63,26 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
                                      txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
         // 更新txn中的undo_logs中的对应undo_log
         txn->ModifyUndoLog((txn_mgr->GetUndoLink(*rid))->prev_log_idx_, log);
-        table_info_->table_->UpdateTupleInPlace(meta, *tuple, *rid, nullptr);
+        if (!table_info_->table_->UpdateTupleInPlace(
+                meta, *tuple, *rid, [txn](const TupleMeta &meta, const Tuple &table, RID rid) {
+                  return meta.ts_ <= txn->GetReadTs() || meta.ts_ == txn->GetTransactionTempTs();
+                })) {
+          txn->SetTainted();
+          throw ExecutionException("in insert_executor: primary key index conflict in check phase");
+        }
       }
     } else if (base_meta.ts_ <= txn->GetReadTs()) {
       log = GenerateNewUndoLog(&(table_info_->schema_), tuple, nullptr, base_meta.ts_, *(txn_mgr->GetUndoLink(*rid)));
       // 在txn中更新undo_logs和write_set，更新undo_link和tuple meta
       auto undo_link = txn->AppendUndoLog(std::move(log));
       txn->AppendWriteSet(table_info_->oid_, *rid);
-      UpdateTupleAndUndoLink(txn_mgr, *rid, undo_link, table_info_->table_.get(), txn, meta, *tuple, nullptr);
+      if (!UpdateTupleAndUndoLink(txn_mgr, *rid, undo_link, table_info_->table_.get(), txn, meta, *tuple,
+                                  [txn](const TupleMeta &meta, const Tuple &tuple, RID rid, std::optional<UndoLink>) {
+                                    return meta.ts_ <= txn->GetReadTs() || meta.ts_ == txn->GetTransactionTempTs();
+                                  })) {
+        txn->SetTainted();
+        throw ExecutionException("in insert_executor: primary key index conflict in check phase");
+      }
     } else {
       txn->SetTainted();
       throw ExecutionException("in delete_executor: write-write conflict");
