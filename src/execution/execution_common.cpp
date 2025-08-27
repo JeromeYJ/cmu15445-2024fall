@@ -17,6 +17,7 @@
 #include "concurrency/transaction_manager.h"
 #include "fmt/core.h"
 #include "storage/table/table_heap.h"
+#include "type/value_factory.h"
 
 namespace bustub {
 
@@ -185,7 +186,13 @@ auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tup
   // 如果为insert的情况(目前在insert_executor中，没有使用该函数，即在一般的insert时，不需要生成UndoLog，但是在将元组插入到被删除的tuple时，会需要生成UndoLog。所以这里生成一个空的UndoLog)
   if (base_tuple == nullptr) {
     std::vector<bool> modified_fields(schema->GetColumnCount(), true);
-    Tuple tuple{target_tuple->GetRid()};
+    std::vector<Value> values;
+    for (const auto &col : schema->GetColumns()) {
+      auto null_value = ValueFactory::GetNullValueByType(col.GetType());
+      values.emplace_back(null_value);
+    }
+    Tuple tuple{values, schema};
+    tuple.SetRid(target_tuple->GetRid());
     return {true, modified_fields, tuple, ts, prev_version};
   }
 
@@ -233,7 +240,7 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
 
   // 下面是原本的思路，但是根据文档要求，确保仅在撤消日志中添加/更新数据，而不要删除数据，即之前在undo_log中的modified_fields_中为true的一直保持true，不会被改为false
 
-  // 先将原本的tuple重建出来
+  // 得出log中tuple的schema
   std::vector<Column> columns;
   for (int i = 0; i < static_cast<int>(log.modified_fields_.size()); i++) {
     if (log.modified_fields_[i]) {

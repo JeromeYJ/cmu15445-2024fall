@@ -53,7 +53,8 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     // bool undo_link_valid_flag = true;
     UndoLog log;
     if (base_meta.ts_ == txn_tmp_ts) {
-      // 如果原本tuple对应的最新undo_link为invalid，表示原本为insert，没有生成undo_log
+      // 如果原本tuple对应的最新undo_link为invalid，表示tuple为本txn通过insert插入，没有生成undo_log
+      // 所以之后本txn的更新操作保持没有undo_log
       if (!txn_mgr->GetUndoLink(*rid).value().IsValid()) {
         // undo_link_valid_flag = false;
         table_info_->table_->UpdateTupleMeta(meta, *rid);
@@ -61,24 +62,30 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
         log = GenerateUpdatedUndoLog(&(table_info_->schema_), tuple, nullptr,
                                      txn_mgr->GetUndoLog(*(txn_mgr->GetUndoLink(*rid))));
         // 更新txn中的undo_logs中的对应undo_log
-        txn->ModifyUndoLog(log.prev_version_.prev_log_idx_, log);
+        txn->ModifyUndoLog((txn_mgr->GetUndoLink(*rid))->prev_log_idx_, log);
         table_info_->table_->UpdateTupleInPlace(meta, *tuple, *rid, nullptr);
       }
-    } else {
+    } else if (base_meta.ts_ <= txn->GetReadTs()) {
       log = GenerateNewUndoLog(&(table_info_->schema_), tuple, nullptr, base_meta.ts_, *(txn_mgr->GetUndoLink(*rid)));
       // 在txn中更新undo_logs和write_set，更新undo_link和tuple meta
       auto undo_link = txn->AppendUndoLog(std::move(log));
       txn->AppendWriteSet(table_info_->oid_, *rid);
       UpdateTupleAndUndoLink(txn_mgr, *rid, undo_link, table_info_->table_.get(), txn, meta, *tuple, nullptr);
+    } else {
+      txn->SetTainted();
+      throw ExecutionException("in delete_executor: write-write conflict");
     }
 
     // table_info_->table_->UpdateTupleMeta(meta, *rid);
 
-    // 根据p4要求，索引中不需要删除条目
-    for (auto &index_info : indexes) {
-      auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
-      index_info->index_->DeleteEntry(key, *rid, exec_ctx_->GetTransaction());
-    }
+    // 根据p4要求，主键索引中不需要删除条目
+    // for (auto &index_info : indexes) {
+    //   if (index_info->is_primary_key_) {
+    //     continue;
+    //   }
+    //   auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_,
+    //   index_info->index_->GetKeyAttrs()); index_info->index_->DeleteEntry(key, *rid, exec_ctx_->GetTransaction());
+    // }
 
     deleted_nums++;
   }

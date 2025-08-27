@@ -33,31 +33,48 @@ auto IndexScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
 
     // 根据测试用例，pred_keys中为where中各个or判断中的常数，所以进行for循环遍历pred_keys查询b+树
     // 这里应该只考虑了比较简单的情形
+    auto table_heap = exec_ctx_->GetCatalog()->GetTable(plan_->table_oid_)->table_.get();
     Schema dummy_schema({});
     std::vector<RID> tmp_result;
     while (cursor_ < plan_->pred_keys_.size()) {
       // 这部分对于index中key_tuple的理解需要深入，需要参考函数KeyFromTuple()
       auto key = plan_->pred_keys_[cursor_]->Evaluate(nullptr, dummy_schema);
       Tuple key_tuple({key}, &(index_info_->key_schema_));
+      tmp_result.clear();
       tree_->ScanKey(key_tuple, &tmp_result, exec_ctx_->GetTransaction());
 
       if (!tmp_result.empty()) {
-        break;
+        *rid = tmp_result[0];
+        auto [meta, base_tuple, undo_link] = GetTupleAndUndoLink(exec_ctx_->GetTransactionManager(), table_heap, *rid);
+        auto undo_logs = CollectUndoLogs(*rid, meta, base_tuple, undo_link, exec_ctx_->GetTransaction(),
+                                         exec_ctx_->GetTransactionManager());
+        if (!undo_logs.has_value()) {
+          cursor_++;
+          continue;
+        }
+        auto current_tuple = ReconstructTuple(&GetOutputSchema(), base_tuple, meta, undo_logs.value());
+        if (!current_tuple.has_value()) {
+          cursor_++;
+          continue;
+        }
+        *tuple = current_tuple.value();
+        cursor_++;
+        return true;
       }
       cursor_++;
     }
 
-    if (tmp_result.empty()) {
-      std::cout << "emit false" << std::endl;
-      return false;
-    }
-    *rid = tmp_result[0];
-    auto table_info = exec_ctx_->GetCatalog()->GetTable(plan_->table_oid_);
-    auto tuple_pair = table_info->table_->GetTuple(*rid);
-    *tuple = tuple_pair.second;
-    cursor_++;
-    // std::cout << "emit tuple rid: " << rid << " cursor: " << cursor_ << std::endl;
-    return true;
+    // if (tmp_result.empty()) {
+    //   std::cout << "emit false" << std::endl;
+    //   return false;
+    // }
+
+    // auto table_info = exec_ctx_->GetCatalog()->GetTable(plan_->table_oid_);
+    // auto tuple_pair = table_info->table_->GetTuple(*rid);
+    // *tuple = tuple_pair.second;
+    // cursor_++;
+    // // std::cout << "emit tuple rid: " << rid << " cursor: " << cursor_ << std::endl;
+    return false;
   }
 
   // 当为order by语句时

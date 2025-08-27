@@ -115,7 +115,7 @@ TEST(TxnIndexTest, InsertDeleteTest) {  // NOLINT
                                     IntResult{{1, 0}, {2, 0}, {3, 0}, {4, 0}}));
 }
 
-TEST(TxnIndexTest, DISABLED_UpdateTest) {  // NOLINT
+TEST(TxnIndexTest, UpdateTest) {  // NOLINT
   const std::string query = "SELECT * FROM maintable";
 
   const auto prepare =
@@ -162,6 +162,7 @@ TEST(TxnIndexTest, DISABLED_UpdateTest) {  // NOLINT
     WithTxn(txn3, QueryIndex(*bustub, _var, _txn, query, "col1", std::vector<int>{1, 2, 3, 4, 5, 6},
                              IntResult{{1, 0}, {}, {}, {4, 0}, {}, {}}));
 
+    TxnMgrDbg("before txn3 insert operations", bustub->txn_manager_.get(), table_info.get(), table_info->table_.get());
     WithTxn(txn3, ExecuteTxn(*bustub, _var, _txn, "INSERT INTO maintable VALUES (2, 1), (5, 1), (3, 1), (6, 1)"));
     TxnMgrDbg("after txn3 insert operations", bustub->txn_manager_.get(), table_info.get(), table_info->table_.get());
     WithTxn(txn3, ExecuteTxn(*bustub, _var, _txn, "UPDATE maintable SET col2 = col2 + 10"));
@@ -212,7 +213,7 @@ TEST(TxnIndexTest, DISABLED_UpdateTest) {  // NOLINT
   // hidden tests...
 }
 
-TEST(GradingTxnIndexTest, DISABLED_IndexUpdateConflictTest) {  // NOLINT
+TEST(GradingTxnIndexTest, IndexUpdateConflictTest) {  // NOLINT
   const std::string query = "SELECT * FROM maintable";
 
   auto bustub = std::make_unique<BusTubInstance>();
@@ -236,7 +237,7 @@ TEST(GradingTxnIndexTest, DISABLED_IndexUpdateConflictTest) {  // NOLINT
   // hidden tests...
 }
 
-TEST(TxnIndexTest, DISABLED_UpdatePrimaryKeyTest) {  // NOLINT
+TEST(TxnIndexTest, UpdatePrimaryKeyTest) {  // NOLINT
   const std::string query = "SELECT * FROM maintable";
 
   auto bustub = std::make_unique<BusTubInstance>();
@@ -252,11 +253,12 @@ TEST(TxnIndexTest, DISABLED_UpdatePrimaryKeyTest) {  // NOLINT
   TxnMgrDbg("after txn1 insert", bustub->txn_manager_.get(), table_info.get(), table_info->table_.get());
   auto txn2 = BeginTxn(*bustub, "txn2");
   WithTxn(txn2, ExecuteTxn(*bustub, _var, _txn, "UPDATE maintable SET col1 = col1 + 1"));
+  TxnMgrDbg("after txn2 update(1)", bustub->txn_manager_.get(), table_info.get(), table_info->table_.get());
   WithTxn(txn2, QueryShowResult(*bustub, _var, _txn, query, IntResult{{2, 0}, {3, 0}, {4, 0}, {5, 0}}));
   WithTxn(txn2, QueryIndex(*bustub, _var, _txn, query, "col1", std::vector<int>{1, 2, 3, 4, 5},
                            IntResult{{}, {2, 0}, {3, 0}, {4, 0}, {5, 0}}));
   WithTxn(txn2, CommitTxn(*bustub, _var, _txn));
-  TxnMgrDbg("after txn2 update", bustub->txn_manager_.get(), table_info.get(), table_info->table_.get());
+  TxnMgrDbg("after txn2 update(2)", bustub->txn_manager_.get(), table_info.get(), table_info->table_.get());
   auto txn3 = BeginTxn(*bustub, "txn3");
   WithTxn(txn3, ExecuteTxn(*bustub, _var, _txn, "UPDATE maintable SET col1 = col1 - 2"));
   WithTxn(txn3, QueryShowResult(*bustub, _var, _txn, query, IntResult{{0, 0}, {1, 0}, {2, 0}, {3, 0}}));
