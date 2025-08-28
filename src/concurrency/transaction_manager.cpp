@@ -99,6 +99,26 @@ void TransactionManager::Abort(Transaction *txn) {
   }
 
   // TODO(fall2023): Implement the abort logic!
+  for (auto [table_oid, rids] : txn->GetWriteSets()) {
+    for (auto rid : rids) {
+      auto table_heap = catalog_->GetTable(table_oid)->table_.get();
+      auto [meta, tuple, undo_link] = GetTupleAndUndoLink(this, table_heap, rid);
+      if (!undo_link.has_value() || !undo_link->IsValid()) {
+        meta.is_deleted_ = true;
+        meta.ts_ = 0;
+        UpdateTupleAndUndoLink(this, rid, undo_link, table_heap, txn, meta, tuple, nullptr);
+      } else {
+        auto log = GetUndoLog(*undo_link);
+        auto old_tuple = ReconstructTuple(&catalog_->GetTable(table_oid)->schema_, tuple, meta, {log});
+        if (old_tuple.has_value()) {
+          UpdateTupleAndUndoLink(this, rid, log.prev_version_, table_heap, txn, meta, *old_tuple, nullptr);
+        } else {
+          meta.is_deleted_ = true;
+          UpdateTupleAndUndoLink(this, rid, log.prev_version_, table_heap, txn, meta, tuple, nullptr);
+        }
+      }
+    }
+  }
 
   std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
   txn->state_ = TransactionState::ABORTED;

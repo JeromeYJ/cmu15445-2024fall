@@ -87,7 +87,7 @@ TEST(TxnBonusTest, DISABLED_ConcurrentSerializableTest) {  // NOLINT
   }
 }
 
-TEST(TxnBonusTest, DISABLED_AbortTest) {  // NOLINT
+TEST(TxnBonusTest, AbortTest) {  // NOLINT
   fmt::println(stderr, "--- AbortTest1: Simple Abort ---");
   {
     auto bustub = std::make_unique<BusTubInstance>();
